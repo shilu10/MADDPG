@@ -2,111 +2,111 @@ from npy_append_array import NpyAppendArray
 import numpy as np
 
 class Trainer:   
-    def __init__(self, env, trainer_params): 
-       
+    def __init__(self, env, gamma, alpha, beta, tau, soft_update, 
+                                 noe, max_steps, is_tg, tg_bot_freq_epi, record, 
+                                 env_obs_dims, actors_input_dims, n_agents, n_actions, batch_size, mem_size): 
         self.env = env 
-        self.noe = trainer_params.get("noe")
-        self.max_steps = trainer_params.get("max_steps")
-       
-        self.eps_decay_rate = trainer_params.get("eps_decay_rate")
-        self.action_space = trainer_params.get("action_space")
-        self.is_tg = trainer_params.get("is_tg")
-        self.tg_bot_freq_epi = trainer_params.get("tg_bot_freq_epi")
-        self.record = trainer_params.get("record")
-        self.agent_params = {
-                        "gamma":  trainer_params.get("gamma"), 
-                        "lr":  trainer_params.get("lr"), 
-                        "input_dims":  trainer_params.get("input_dims"),
-                        "mem_size" :  trainer_params.get("mem_size"),
-                        "batch_size" :  trainer_params.get("batch_size"),
-                        "replace" :  trainer_params.get("replace"),
-                        "algo" :  trainer_params.get("algo"),
-                        "env_name" :  trainer_params.get("env_name"),
-                        "n_actions" :  trainer_params.get("n_actions"),
-                        "chkpt_dir":  trainer_params.get("chkpt_dir"),
-                        "actions":  trainer_params.get("actions"),
-                        "eps": trainer_params.get("eps"),
-                        "min_eps": trainer_params.get("min_eps"),
-                        "eps_decay_rate": trainer_params.get("eps_decay_rate"),
-                        "cer": trainer_params.get("cer")
-                    }
-        
-        self.agent = Agent(self.agent_params)
-        
+        self.target_score = 80
+        self.noe = noe
+        self.max_steps = max_steps
+        self.is_tg = is_tg
+        self.tg_bot_freq_epi = tg_bot_freq_epi
+        self.record = record 
         self.writer = Writer("model_training_results.txt")
-        self.recorder = RecordVideo(trainer_params.get("video_prefix"), "videos/", 20)
-        print(self.recorder)
+        self.recorder = RecordVideo("maddpg", "videos/", 20)
+        self.maddpg_agent = MADDPGAgent(actors_input_dims, env_obs_dims, batch_size, n_agents, 
+                                             n_actions, tau, alpha, beta, soft_update, gamma)
         
-        self.target_score = trainer_params.get("target_score")
+        self.maddpg_agent.initialize_agents()
+        
+        self.memory = MultiAgentReplayBuffer(mem_size, env_obs_dims, 
+                                                 actors_input_dims, n_actions, n_agents, batch_size)
+        
+        
+    def create_env_obs(self, actors_state): 
+        env_obs = np.array([])
+        for actor_state in actors_state:
+            env_obs = np.append(env_obs, actor_state)
 
+        return np.array(env_obs)
+
+    
     def train_rl_model(self): 
-        episode_rewards = []
-        epsilon_history = []
+        learned = False
         avg_rewards = []
         best_reward = float("-inf")
-
+        episode_rewards = []
+        tot_steps = 0
         for episode in range(self.noe): 
             n_steps = 0 
-            episodic_loss = 0
-            state = self.env.reset()
+            actors_state = env.reset()
             reward = 0 
             
-            if self.record and episode%100==0: 
+            if record and episode % 50 == 0:
                 img = self.env.render()
                 self.recorder.add_image(img)
 
             for step in range(self.max_steps): 
                 
-                if self.record and episode%100==0: 
+                actors_actions = self.maddpg_agent.get_actions(actors_state)
+
+                next_info = self.env.step(actors_actions)
+                actors_next_state, reward_probs, dones, _ = next_info
+          #      print(dones)
+                reward += sum(reward_probs)
+                
+                env_obs = self.create_env_obs(actors_state)
+                env_nxt_obs = self.create_env_obs(actors_next_state)
+
+                self.memory.store_experiences(actors_state, env_obs, actors_actions, 
+                                                     reward_probs, actors_next_state, env_nxt_obs, dones)
+                
+                if self.memory.is_sufficient() and tot_steps % 50 == 0: 
+                    learned = True
+                    actors_states_batch, env_obs_batch, actors_actions_batch, rewards_batch, \
+                                actor_new_states_batch, env_next_obs_batch, terminal_batch = self.memory.sample_experiences()
+                    
+
+                    self.maddpg_agent.learn(env_obs_batch, env_next_obs_batch, actors_states_batch, 
+                                                    actors_actions_batch, actors_actions_batch, rewards_batch, terminal_batch)
+
+                actors_state = actors_next_state
+                n_steps += 1   
+                tot_steps += 1 
+                
+                # record
+                if record and episode % 50 == 0:
                     img = self.env.render()
                     self.recorder.add_image(img)
-
-                if type(state) == tuple: 
-                    state = state[0]
-                state = state
-
-                action = self.agent.choose_action(state)
-
-                next_info = self.env.step(action)
-                next_state, reward_prob, terminated, truncated, _ = next_info
-                done = truncated or terminated
-                reward += reward_prob
-
-                self.agent.store_experience(state, action, reward_prob, next_state, done)
-                eps = self.agent.learn()
-
-                state = next_state
-                n_steps += 1 
-               
                 
-                if done: 
+                if np.any(dones): 
                     break
-
-            epsilon_history.append(eps)
+            
             episode_rewards.append(reward)
             avg_reward = np.mean(episode_rewards[-100:])
             avg_rewards.append(avg_reward)
 
-            result = f"Episode: {episode}, Epsilon: {eps}, Steps: {n_steps}, Reward: {reward}, Best reward: {best_reward}, Avg reward: {avg_reward}"
+            result = f"Episode: {episode}, Steps: {n_steps}, Reward: {reward}, Best reward: {best_reward}, Avg reward: {avg_reward}"
             self.writer.write_to_file(result)
-            print(result)
+            if episode % 100 == 0: 
+                print(result)
             
-            # Saving Best Model
-            if reward > best_reward: 
-                best_reward = reward
-                self.agent.save_models()
-            
-            # video Recorder
-            if episode % 100 ==0:
+            # Recording.
+            if record and episode % 50 == 0:
                 self.recorder.save(episode)
                 
-          # Telegram bot
+            # Saving Best Model
+            if reward > best_reward and episode != 0 and learned: 
+                best_reward = reward
+                self.maddpg_agent.save_models()
+                
+            # Telegram bot
             if self.is_tg and episode % self.tg_bot_freq_epi == 0: 
                 info_msg(episode+1, self.noe, reward, best_reward, "d")
                 
-         # Eatly Stopping
-            if episode > 100 and np.mean(episode_rewards[-100:]) >= self.target_score: 
+            # Eatly Stopping
+            if episode > 100 and np.mean(episode_rewards[-20:]) >= self.target_score: 
                 break
                 
-                
-        return episode_rewards, epsilon_history, avg_rewards, best_reward
+        return episode_rewards, avg_rewards, best_reward
+    
