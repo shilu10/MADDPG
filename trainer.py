@@ -1,5 +1,15 @@
 from npy_append_array import NpyAppendArray
 import numpy as np
+import os 
+import tensorflow as tf 
+import tensorflow.keras as keras 
+from telegram_bot import * 
+from multiagent_experience_replay import * 
+from maddpg_agent import * 
+from ddpg_agent import * 
+from video_recorder import * 
+from writer import *
+from utils import *
 
 class Trainer:   
     def __init__(self, env, gamma, alpha, beta, tau, soft_update, 
@@ -28,8 +38,7 @@ class Trainer:
         for actor_state in actors_state:
             env_obs = np.append(env_obs, actor_state)
 
-        return np.array(env_obs)
-
+return np.array(env_obs)
     
     def train_rl_model(self): 
         learned = False

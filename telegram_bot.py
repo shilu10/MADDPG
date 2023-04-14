@@ -3,8 +3,9 @@ from telebot import TeleBot
 import datetime
 import telebot
 
-token = "6238487424:AAG0jRhvbiVa90qUcf2fAirQr_-quPMs7cU"
-chat_id = "1055055706"
+token = os.envion.get("TG_TOKEN")
+chat_id = os.envion.get("TG_CHATID")
+
 bot = TeleBot(token=token) 
 
 def telegram_send(message, bot):
