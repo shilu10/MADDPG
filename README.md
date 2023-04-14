@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <h1 align = "center">
   AI-ML Project Template <br>
   <a href="https://github.com/ZenithClown/ai-ml-project-template/issues"><img alt="GitHub issues" src="https://img.shields.io/github/issues/ZenithClown/ai-ml-project-template?logo=git&style=plastic"></a>
@@ -52,3 +53,6 @@ Would be great, if you :link: put a link to my template, if you use this reposit
 ## Resources
 
 <p align = "justify">:card_index: Documentation and/or Resources for your codes, and other mentions can be included in this section! :key:</p>
+=======
+MADDPG
+>>>>>>> 99a63d01daa5021b6943ade435c630a12f34f9bf
